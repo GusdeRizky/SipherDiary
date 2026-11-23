@@ -1,6 +1,7 @@
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
+    alias(libs.plugins.ksp)
 }
 
 android {
@@ -52,4 +53,25 @@ dependencies {
     androidTestImplementation(libs.androidx.junit)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
     debugImplementation(libs.androidx.compose.ui.tooling)
+    implementation("androidx.compose.material:material-icons-extended")
+
+    // Navigasi antar layar Compose
+    implementation("androidx.navigation:navigation-compose:2.8.5")
+
+    // Penyimpanan pengaturan lokal (DataStore)
+    implementation("androidx.datastore:datastore-preferences:1.1.1")
+
+    // Pemantau siklus hidup aplikasi (untuk auto-lock)
+    implementation("androidx.lifecycle:lifecycle-process:2.8.7")
+
+    // Sidik jari (BiometricPrompt)
+    implementation("androidx.biometric:biometric:1.1.0")
+
+    // Hash PIN dengan bcrypt
+    implementation("at.favre.lib:bcrypt:0.10.2")
+
+    // Database Lokal (Room)
+    implementation("androidx.room:room-runtime:2.7.1")
+    implementation("androidx.room:room-ktx:2.7.1")
+    ksp("androidx.room:room-compiler:2.7.1")
 }
