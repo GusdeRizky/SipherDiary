@@ -18,6 +18,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.material.icons.outlined.Wifi
+import androidx.compose.material.icons.outlined.WifiFind
+import com.example.sipherdiary.security.NearbyWifi
 import com.example.sipherdiary.security.NetCheckResult
 import com.example.sipherdiary.security.NetVerdict
 import com.example.sipherdiary.ui.components.*
@@ -37,7 +40,11 @@ fun WifiCheckScreen(
     onRequestLocation: () -> Unit,
     onRecheck: () -> Unit,
     onProceedBackup: () -> Unit,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    nearby: List<NearbyWifi>? = null,
+    isScanning: Boolean = false,
+    scanMessage: String? = null,
+    onScanNearby: () -> Unit = {}
 ) {
     Scaffold(containerColor = SipherColor.Bg) { inner ->
         Column(
@@ -133,6 +140,41 @@ fun WifiCheckScreen(
                 }
             }
 
+            // ---------------- Wi-Fi di sekitar
+            SectionLabel(
+                if (nearby == null) "Wi-Fi di sekitar"
+                else "Wi-Fi di sekitar (${nearby.size})"
+            )
+            if (nearby != null && nearby.isNotEmpty()) {
+                val safe = nearby.count { it.verdict == NetVerdict.AMAN }
+                val weak = nearby.count { it.verdict == NetVerdict.AMAN_SINYAL_LEMAH }
+                val unsafe = nearby.count { it.verdict == NetVerdict.TIDAK_AMAN }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    StatusChip("$safe aman", SipherColor.Success)
+                    StatusChip("$weak lemah", SipherColor.Warning)
+                    StatusChip("$unsafe tidak aman", SipherColor.Danger)
+                }
+                SipherCard {
+                    nearby.forEachIndexed { index, wifi ->
+                        if (index > 0) HorizontalDivider(color = SipherColor.Line)
+                        NearbyWifiRow(wifi)
+                    }
+                }
+            } else if (nearby != null && !isScanning) {
+                SipherCard(color = SipherColor.Subtle) {
+                    Text(scanMessage ?: "Tidak ada Wi-Fi terdeteksi.", fontSize = 13.sp, color = SipherColor.Ink600)
+                }
+            } else if (scanMessage != null && !isScanning) {
+                SipherCard(color = SipherColor.Subtle) {
+                    Text(scanMessage, fontSize = 13.sp, color = SipherColor.Warning)
+                }
+            }
+            OutlineButton(
+                text = if (isScanning) "Memindai…" else if (nearby == null) "Pindai Wi-Fi di sekitar" else "Pindai ulang",
+                onClick = onScanNearby,
+                enabled = !isScanning
+            )
+
             if (needsLocationPermission) {
                 OutlineButton("Izinkan akses lokasi (baca jenis Wi-Fi)", onRequestLocation)
             }
@@ -149,6 +191,48 @@ fun WifiCheckScreen(
             OutlineButton("Periksa ulang", onRecheck)
             Spacer(Modifier.height(24.dp))
         }
+    }
+}
+
+@Composable
+private fun NearbyWifiRow(wifi: NearbyWifi) {
+    val (color, _) = verdictStyle(wifi.verdict)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        IconBadge(
+            icon = if (wifi.isConnected) Icons.Outlined.Wifi else Icons.Outlined.WifiFind,
+            tint = color,
+            background = color.copy(alpha = 0.10f)
+        )
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Text(
+                wifi.ssid + if (wifi.isConnected) "  · tersambung" else "",
+                fontSize = 14.5.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = SipherColor.Ink900,
+                maxLines = 1
+            )
+            Text(
+                "${wifi.securityType} · ${wifi.rssi} dBm · ${wifi.band}",
+                fontSize = 12.sp,
+                fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                color = SipherColor.Ink600
+            )
+        }
+        Spacer(Modifier.width(8.dp))
+        StatusChip(
+            when (wifi.verdict) {
+                NetVerdict.AMAN -> "Aman"
+                NetVerdict.AMAN_SINYAL_LEMAH -> "Lemah"
+                else -> "Tidak aman"
+            },
+            color
+        )
     }
 }
 

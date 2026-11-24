@@ -43,15 +43,12 @@ fun CalendarScreen(
 
     val byDate = remember(entries) { entries.groupBy { it.date } }
     val monthEntries = remember(entries, month) { entries.filter { YearMonth.from(it.date) == month } }
-    // Mood dominan per hari (paling sering muncul)
-    val dominantMood: Map<LocalDate, MoodType> = remember(byDate) {
-        byDate.mapValues { (_, list) -> list.groupingBy { it.mood }.eachCount().maxBy { it.value }.key }
+    // Semua mood (unik) per tanggal → ditampilkan sebagai titik-titik di kalender
+    val moodsByDate: Map<LocalDate, List<MoodType>> = remember(byDate) {
+        byDate.mapValues { (_, list) -> list.map { it.mood }.distinct().sortedBy { it.code } }
     }
-    val moodSummary = remember(monthEntries) {
-        monthEntries.groupBy { it.date }.values
-            .map { list -> list.groupingBy { it.mood }.eachCount().maxBy { it.value }.key }
-            .groupingBy { it }.eachCount()
-    }
+    // Ringkasan dihitung per CATATAN (bukan per hari), jadi 3 catatan di hari yang sama tetap terhitung 3
+    val moodSummary = remember(monthEntries) { monthEntries.groupingBy { it.mood }.eachCount() }
     val selectedEntries = byDate[selectedDate].orEmpty()
 
     Scaffold(
@@ -99,13 +96,13 @@ fun CalendarScreen(
                     MonthGrid(
                         month = month,
                         selected = selectedDate,
-                        dominantMood = dominantMood,
+                        moodsByDate = moodsByDate,
                         onSelect = { selectedDate = it }
                     )
                 }
             }
 
-            item { SectionLabel("Ringkasan bulan ini") }
+            item { SectionLabel("Ringkasan bulan ini · ${monthEntries.size} catatan") }
             item {
                 SipherCard {
                     if (moodSummary.isEmpty()) {
@@ -137,7 +134,7 @@ fun CalendarScreen(
                                     )
                                 }
                                 Spacer(Modifier.width(10.dp))
-                                Text("$count hari", fontSize = 12.5.sp, color = SipherColor.Ink600, modifier = Modifier.width(48.dp))
+                                Text("$count catatan", fontSize = 12.5.sp, color = SipherColor.Ink600, modifier = Modifier.width(64.dp))
                             }
                         }
                     }
@@ -174,7 +171,7 @@ fun CalendarScreen(
 private fun MonthGrid(
     month: YearMonth,
     selected: LocalDate,
-    dominantMood: Map<LocalDate, MoodType>,
+    moodsByDate: Map<LocalDate, List<MoodType>>,
     onSelect: (LocalDate) -> Unit
 ) {
     val first = month.atDay(1)
@@ -200,7 +197,7 @@ private fun MonthGrid(
                         if (day in 1..days) {
                             val date = month.atDay(day)
                             val isSelected = date == selected
-                            val mood = dominantMood[date]
+                            val moods = moodsByDate[date].orEmpty()
                             Surface(
                                 modifier = Modifier
                                     .fillMaxSize()
@@ -225,18 +222,20 @@ private fun MonthGrid(
                                         color = if (isSelected) Color.White else SipherColor.Ink900
                                     )
                                     Spacer(Modifier.height(2.dp))
-                                    Box(
-                                        Modifier
-                                            .size(6.dp)
-                                            .clip(CircleShape)
-                                            .background(
-                                                when {
-                                                    mood == null -> Color.Transparent
-                                                    isSelected -> Color.White
-                                                    else -> Color(mood.colorHex)
-                                                }
+                                    // Maks. 3 titik mood per tanggal
+                                    Row(
+                                        modifier = Modifier.height(6.dp),
+                                        horizontalArrangement = Arrangement.spacedBy(2.dp)
+                                    ) {
+                                        moods.take(3).forEach { mood ->
+                                            Box(
+                                                Modifier
+                                                    .size(5.dp)
+                                                    .clip(CircleShape)
+                                                    .background(if (isSelected) Color.White else Color(mood.colorHex))
                                             )
-                                    )
+                                        }
+                                    }
                                 }
                             }
                         }

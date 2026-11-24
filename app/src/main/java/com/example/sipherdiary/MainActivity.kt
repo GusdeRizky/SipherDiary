@@ -446,6 +446,17 @@ class MainActivity : FragmentActivity() {
                             }
                             nav.popBackStack()
                         }
+                    },
+                    onDeleteClicked = existing?.let { entry ->
+                        {
+                            scope.launch {
+                                if (session != SessionState.DecoyUnlocked) {
+                                    container.entryRepository.deleteEntry(entry.id)
+                                }
+                                toast("Catatan dihapus")
+                                nav.popBackStack()
+                            }
+                        }
                     }
                 )
             }
@@ -510,6 +521,27 @@ class MainActivity : FragmentActivity() {
                 var checking by remember { mutableStateOf(true) }
                 var backingUp by remember { mutableStateOf(false) }
                 var runKey by remember { mutableIntStateOf(0) }
+                var nearby by remember { mutableStateOf<List<com.example.sipherdiary.security.NearbyWifi>?>(null) }
+                var scanning by remember { mutableStateOf(false) }
+                var scanMessage by remember { mutableStateOf<String?>(null) }
+                var scanKey by remember { mutableIntStateOf(0) }
+
+                // Pindai otomatis saat layar dibuka bila izin lokasi sudah ada
+                LaunchedEffect(Unit) {
+                    if (container.networkChecker.hasLocationPermission()) scanKey++
+                }
+                LaunchedEffect(scanKey) {
+                    if (scanKey == 0) return@LaunchedEffect
+                    scanning = true
+                    when (val r = container.networkChecker.scanNearby()) {
+                        is com.example.sipherdiary.security.ScanOutcome.Success -> {
+                            nearby = r.networks
+                            scanMessage = if (r.networks.isEmpty()) "Tidak ada Wi-Fi terdeteksi. Coba lagi beberapa detik lagi." else null
+                        }
+                        is com.example.sipherdiary.security.ScanOutcome.Unavailable -> scanMessage = r.reason
+                    }
+                    scanning = false
+                }
 
                 LaunchedEffect(runKey) {
                     checking = true
@@ -519,7 +551,10 @@ class MainActivity : FragmentActivity() {
                 }
                 val locationLauncher = rememberLauncherForActivityResult(
                     ActivityResultContracts.RequestPermission()
-                ) { runKey++ }
+                ) { granted ->
+                    runKey++
+                    if (granted) scanKey++
+                }
 
                 val needsLocation = !container.networkChecker.hasLocationPermission() &&
                         (Build.VERSION.SDK_INT < 31 || result?.securityType == "UNKNOWN")
@@ -546,7 +581,14 @@ class MainActivity : FragmentActivity() {
                             backingUp = false
                         }
                     },
-                    onBack = { nav.popBackStack() }
+                    onBack = { nav.popBackStack() },
+                    nearby = nearby,
+                    isScanning = scanning,
+                    scanMessage = scanMessage,
+                    onScanNearby = {
+                        if (container.networkChecker.hasLocationPermission()) scanKey++
+                        else locationLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
+                    }
                 )
             }
 

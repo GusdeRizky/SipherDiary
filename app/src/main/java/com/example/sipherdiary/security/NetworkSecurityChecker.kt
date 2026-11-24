@@ -9,8 +9,11 @@ import android.net.NetworkCapabilities
 import android.net.wifi.WifiInfo
 import android.net.wifi.WifiManager
 import android.os.Build
+import android.location.LocationManager
 import androidx.core.content.ContextCompat
+import androidx.core.location.LocationManagerCompat
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import java.net.Inet4Address
 import java.net.URL
@@ -37,6 +40,22 @@ data class NetCheckResult(
     /** Label singkat untuk riwayat backup. */
     val shortLabel: String
         get() = if (connectionType == "Data seluler") "SELULER" else securityType
+}
+
+/** Satu jaringan Wi-Fi hasil pemindaian di sekitar. */
+data class NearbyWifi(
+    val ssid: String,
+    val bssid: String,
+    val securityType: String,   // WPA3 / WPA2 / WPA2-Enterprise / WPA / OWE / WEP / OPEN
+    val rssi: Int,
+    val band: String,           // 2.4 GHz / 5 GHz / 6 GHz
+    val isConnected: Boolean,
+    val verdict: NetVerdict
+)
+
+sealed class ScanOutcome {
+    data class Success(val networks: List<NearbyWifi>) : ScanOutcome()
+    data class Unavailable(val reason: String) : ScanOutcome()
 }
 
 /**
@@ -123,7 +142,7 @@ class NetworkSecurityChecker(private val context: Context) {
     private fun securityType(wifiManager: WifiManager, info: WifiInfo?): String {
         if (info == null) return "UNKNOWN"
         if (Build.VERSION.SDK_INT >= 31) {
-            return when (info.currentSecurityType) {
+            val fromInfo = when (info.currentSecurityType) {
                 WifiInfo.SECURITY_TYPE_SAE,
                 WifiInfo.SECURITY_TYPE_EAP_WPA3_ENTERPRISE,
                 WifiInfo.SECURITY_TYPE_EAP_WPA3_ENTERPRISE_192_BIT -> "WPA3"
@@ -134,6 +153,7 @@ class NetworkSecurityChecker(private val context: Context) {
                 WifiInfo.SECURITY_TYPE_OWE -> "OPEN"
                 else -> "UNKNOWN"
             }
+            if (fromInfo != "UNKNOWN") return fromInfo
         }
         // Android 8–11: cocokkan BSSID dengan hasil scan (butuh izin lokasi)
         if (!hasLocationPermission()) return "UNKNOWN"
@@ -149,6 +169,74 @@ class NetworkSecurityChecker(private val context: Context) {
             "WEP" in caps -> "WEP"
             else -> "OPEN"
         }
+    }
+
+    // ------------------------------------------------------------------ Wi-Fi di sekitar
+    fun isLocationEnabled(): Boolean = runCatching {
+        LocationManagerCompat.isLocationEnabled(context.getSystemService(LocationManager::class.java))
+    }.getOrDefault(false)
+
+    /**
+     * Memindai semua Wi-Fi di sekitar dan menilai keamanannya dengan aturan yang sama.
+     * Android mensyaratkan izin lokasi + Lokasi (GPS) aktif untuk membaca hasil scan,
+     * dan membatasi scan baru maks. 4× per 2 menit (jika dibatasi, hasil terakhir dipakai).
+     */
+    @Suppress("DEPRECATION")
+    suspend fun scanNearby(): ScanOutcome = withContext(Dispatchers.IO) {
+        if (!hasLocationPermission()) return@withContext ScanOutcome.Unavailable("Izin lokasi diperlukan untuk memindai Wi-Fi")
+        if (!isLocationEnabled()) return@withContext ScanOutcome.Unavailable("Nyalakan Lokasi (GPS) di HP agar Wi-Fi sekitar bisa dibaca")
+        val wifiManager = context.applicationContext.getSystemService(WifiManager::class.java)
+        if (!wifiManager.isWifiEnabled) return@withContext ScanOutcome.Unavailable("Wi-Fi HP sedang mati")
+
+        runCatching { wifiManager.startScan() }
+        delay(3000)
+
+        val connectedBssid = runCatching { wifiManager.connectionInfo?.bssid }.getOrNull()
+        val results = runCatching { wifiManager.scanResults }.getOrNull().orEmpty()
+
+        val networks = results
+            .map { r ->
+                val ssid = (if (Build.VERSION.SDK_INT >= 33) r.wifiSsid?.toString() else r.SSID)
+                    ?.removeSurrounding("\"")?.takeIf { it.isNotBlank() } ?: "(SSID tersembunyi)"
+                val security = securityFromCapabilities(r.capabilities.orEmpty())
+                NearbyWifi(
+                    ssid = ssid,
+                    bssid = r.BSSID ?: "",
+                    securityType = security,
+                    rssi = r.level,
+                    band = when {
+                        r.frequency >= 5925 -> "6 GHz"
+                        r.frequency >= 4900 -> "5 GHz"
+                        else -> "2.4 GHz"
+                    },
+                    isConnected = connectedBssid != null && r.BSSID.equals(connectedBssid, ignoreCase = true),
+                    verdict = classify(security, r.level)
+                )
+            }
+            // Satu SSID bisa punya banyak access point: ambil yang tersambung / sinyal terkuat
+            .groupBy { it.ssid }
+            .map { (_, aps) -> aps.firstOrNull { it.isConnected } ?: aps.maxBy { it.rssi } }
+            .sortedWith(compareByDescending<NearbyWifi> { it.isConnected }.thenByDescending { it.rssi })
+
+        ScanOutcome.Success(networks)
+    }
+
+    private fun securityFromCapabilities(caps: String): String = when {
+        "SAE" in caps || "WPA3" in caps -> "WPA3"
+        "EAP" in caps && ("RSN" in caps || "WPA2" in caps) -> "WPA2-Enterprise"
+        "RSN" in caps || "WPA2" in caps -> "WPA2"
+        "WPA" in caps -> "WPA"
+        "OWE" in caps -> "OWE"
+        "WEP" in caps -> "WEP"
+        else -> "OPEN"
+    }
+
+    /** Aturan penilaian yang sama dengan jaringan yang tersambung. */
+    private fun classify(security: String, rssi: Int): NetVerdict = when (security) {
+        "OPEN", "WEP" -> NetVerdict.TIDAK_AMAN
+        "WPA3", "WPA2-Enterprise" -> NetVerdict.AMAN
+        "WPA2" -> if (rssi > -70) NetVerdict.AMAN else NetVerdict.AMAN_SINYAL_LEMAH
+        else -> NetVerdict.AMAN_SINYAL_LEMAH // WPA lama / OWE: terenkripsi tapi lemah
     }
 
     private fun localIpv4(link: LinkProperties?): String =

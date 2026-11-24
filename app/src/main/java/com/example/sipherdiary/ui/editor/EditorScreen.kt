@@ -37,8 +37,10 @@ import java.util.Locale
 fun EditorScreen(
     existingEntry: DiaryEntry?,
     onCloseClicked: () -> Unit,
-    onSaveClicked: (title: String, body: String, mood: MoodType) -> Unit
+    onSaveClicked: (title: String, body: String, mood: MoodType) -> Unit,
+    onDeleteClicked: (() -> Unit)? = null
 ) {
+    var showDeleteDialog by remember { mutableStateOf(false) }
     var title by remember(existingEntry) { mutableStateOf(existingEntry?.title ?: "") }
     var body by remember(existingEntry) { mutableStateOf(existingEntry?.body ?: "") }
     var selectedMood by remember(existingEntry) { mutableStateOf(existingEntry?.mood ?: MoodType.TENANG) }
@@ -58,6 +60,20 @@ fun EditorScreen(
     }
 
     val canSave = title.isNotBlank() || body.isNotBlank()
+
+    if (showDeleteDialog && onDeleteClicked != null) {
+        AlertDialog(
+            onDismissRequest = { showDeleteDialog = false },
+            title = { Text("Hapus catatan ini?") },
+            text = { Text("Catatan akan dihapus permanen dari HP ini. Backup lama di cloud tetap ada sampai tergantikan.") },
+            confirmButton = {
+                TextButton(onClick = { showDeleteDialog = false; onDeleteClicked() }) {
+                    Text("Hapus", color = SipherColor.Danger)
+                }
+            },
+            dismissButton = { TextButton(onClick = { showDeleteDialog = false }) { Text("Batal") } }
+        )
+    }
 
     Scaffold(
         containerColor = SipherColor.Bg
@@ -109,6 +125,28 @@ fun EditorScreen(
                     )
                 }
 
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                if (onDeleteClicked != null) {
+                    Surface(
+                        modifier = Modifier
+                            .size(40.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .clickable { showDeleteDialog = true },
+                        shape = RoundedCornerShape(12.dp),
+                        color = SipherColor.Bg,
+                        border = BorderStroke(1.dp, SipherColor.Line)
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = Icons.Outlined.Delete,
+                                contentDescription = "Hapus catatan",
+                                tint = SipherColor.Danger,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                    }
+                    Spacer(modifier = Modifier.width(8.dp))
+                }
                 Button(
                     onClick = { onSaveClicked(title, body, selectedMood) },
                     enabled = canSave,
@@ -126,6 +164,7 @@ fun EditorScreen(
                         fontSize = 14.sp,
                         fontWeight = FontWeight.SemiBold
                     )
+                }
                 }
             }
 
