@@ -10,3 +10,12 @@
 #-keepclassmembers class fqcn.of.javascript.interface.for.webview {
 #   public *;
 #}
+# --- SipherDiary ---
+# Entity Room dibaca lewat refleksi oleh kode hasil generate
+-keep class com.example.sipherdiary.data.local.entity.** { *; }
+
+# Hapus log debug/verbose di APK release agar tidak ada data bocor ke logcat
+-assumenosideeffects class android.util.Log {
+    public static *** d(...);
+    public static *** v(...);
+}

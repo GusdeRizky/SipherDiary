@@ -33,7 +33,7 @@ fun LockScreen(
     onBiometricClicked: () -> Unit,
     onUnlocked: () -> Unit,
     onDecoyUnlocked: () -> Unit,
-    onIntruderDetected: () -> Unit,
+    onIntruderDetected: (isNewAttempt: Boolean) -> Unit,
     onForgotPinClicked: () -> Unit
 ) {
     var enteredPin by remember { mutableStateOf("") }
@@ -61,10 +61,15 @@ fun LockScreen(
                         enteredPin = ""
                         isVerifying = false
                     }
-                    is PinResult.Intruder, is PinResult.LockedOut -> {
+                    is PinResult.Intruder -> {
                         enteredPin = ""
                         isVerifying = false
-                        onIntruderDetected()
+                        onIntruderDetected(true)
+                    }
+                    is PinResult.LockedOut -> {
+                        enteredPin = ""
+                        isVerifying = false
+                        onIntruderDetected(false)
                     }
                 }
             }

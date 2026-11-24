@@ -32,7 +32,8 @@ import java.util.Locale
 fun OtpScreen(
     phoneNumber: String,
     onBackClicked: () -> Unit,
-    onVerifyClicked: (String) -> Unit
+    onVerifyClicked: (String) -> Unit,
+    onResendClicked: () -> Unit = {}
 ) {
     var otpCode by remember { mutableStateOf("") }
     var secondsLeft by remember { mutableIntStateOf(60) }
@@ -202,7 +203,10 @@ fun OtpScreen(
                         fontSize = 13.sp,
                         fontWeight = FontWeight.SemiBold,
                         color = SipherColor.Blue500,
-                        modifier = Modifier.clickable { secondsLeft = 60 }
+                        modifier = Modifier.clickable {
+                            secondsLeft = 60
+                            onResendClicked()
+                        }
                     )
                 }
             }
