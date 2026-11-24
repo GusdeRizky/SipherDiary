@@ -10,6 +10,8 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.withContext
+import org.json.JSONArray
+import org.json.JSONObject
 import java.time.LocalDate
 import java.util.UUID
 
@@ -79,6 +81,57 @@ class EntryRepository(private val dao: EntryDao) {
     suspend fun deleteEntry(id: String) = withContext(Dispatchers.IO) {
         dao.deleteById(id)
     }
+
+    suspend fun count(): Int = dao.count()
+
+    /**
+     * Semua catatan dalam bentuk JSON polos (hanya di memori).
+     * Dipakai untuk backup (lalu dienkripsi ulang dengan kunci backup) dan fitur "Unduh data saya".
+     */
+    suspend fun exportJson(): JSONObject = withContext(Dispatchers.Default) {
+        val array = JSONArray()
+        dao.getAll().forEach { entity ->
+            val entry = decryptEntity(entity) ?: return@forEach
+            array.put(
+                JSONObject()
+                    .put("id", entry.id)
+                    .put("date", entity.dateKey)
+                    .put("createdAt", entity.createdAt)
+                    .put("updatedAt", entity.updatedAt)
+                    .put("title", entry.title)
+                    .put("body", entry.body)
+                    .put("mood", entry.mood.code)
+            )
+        }
+        JSONObject()
+            .put("app", "SipherDiary")
+            .put("formatVersion", 1)
+            .put("exportedAt", System.currentTimeMillis())
+            .put("entries", array)
+    }
+
+    /** Pulihkan dari JSON backup: tiap entri dienkripsi ulang dengan kunci Keystore HP ini. */
+    suspend fun importJson(json: JSONObject): Int = withContext(Dispatchers.Default) {
+        val array = json.optJSONArray("entries") ?: return@withContext 0
+        for (i in 0 until array.length()) {
+            val o = array.getJSONObject(i)
+            dao.upsert(
+                EntryEntity(
+                    id = o.getString("id"),
+                    dateKey = o.getString("date"),
+                    createdAt = o.getLong("createdAt"),
+                    updatedAt = o.optLong("updatedAt", o.getLong("createdAt")),
+                    titleEnc = CryptoManager.encrypt(o.optString("title").toByteArray(Charsets.UTF_8)),
+                    bodyEnc = CryptoManager.encrypt(o.optString("body").toByteArray(Charsets.UTF_8)),
+                    moodEnc = CryptoManager.encrypt(byteArrayOf(o.optInt("mood", 2).toByte())),
+                    isDraft = false
+                )
+            )
+        }
+        array.length()
+    }
+
+    suspend fun wipe() = withContext(Dispatchers.IO) { dao.wipe() }
 
     private fun decryptEntity(entity: EntryEntity): DiaryEntry? {
         return runCatching {

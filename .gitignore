@@ -13,3 +13,8 @@
 .externalNativeBuild
 .cxx
 local.properties
+
+# Firebase config & kunci rilis (jangan di-commit)
+app/google-services.json
+*.jks
+keystore.properties

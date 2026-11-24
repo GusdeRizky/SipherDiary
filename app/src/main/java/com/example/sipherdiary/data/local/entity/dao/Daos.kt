@@ -21,6 +21,12 @@ interface EntryDao {
     @Query("DELETE FROM entries WHERE id = :id")
     suspend fun deleteById(id: String)
 
+    @Query("SELECT * FROM entries WHERE is_draft = 0 ORDER BY created_at ASC")
+    suspend fun getAll(): List<EntryEntity>
+
+    @Query("SELECT COUNT(*) FROM entries")
+    suspend fun count(): Int
+
     @Query("DELETE FROM entries")
     suspend fun wipe()
 }
@@ -32,6 +38,12 @@ interface IntruderDao {
 
     @Upsert
     suspend fun insert(log: IntruderLogEntity)
+
+    @Query("SELECT COUNT(*) FROM intruder_logs WHERE seen = 0")
+    fun observeUnseenCount(): Flow<Int>
+
+    @Query("UPDATE intruder_logs SET seen = 1")
+    suspend fun markAllSeen()
 
     @Query("DELETE FROM intruder_logs")
     suspend fun wipe()
